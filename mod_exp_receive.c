@@ -1,6 +1,8 @@
 
 #include "ap_config.h"
 #include "ap_provider.h"
+#include "apr.h"
+#include "apr_file_io.h"
 #include "httpd.h"
 #include "http_core.h"
 #include "http_config.h"
@@ -34,16 +36,18 @@ static int process_request_body(request_rec *r, const char* body, int body_size)
 	strcpy(filename, DIRECTORY);
 	strcat(filename, from_data);
 
-	FILE *fp = fopen(filename, "w+");
+	apr_file_t* fp = NULL;
+	apr_status_t result = apr_file_open(&fp, filename, (APR_WRITE | APR_CREATE | APR_TRUNCATE), APR_OS_DEFAULT, r->pool);
 
-	if(fp == NULL)
+	if(result != OK)
 	{
-		ap_log_rerror("mod_exp_receive.c", 41, APLOG_ERR, r->status, r, "Could not open file: %s", strerror(errno));
+		ap_log_rerror("mod_exp_receive.c", 41, APLOG_ERR, r->status, r, "Could not open file: %i. Have you checked SELINUX context for the directory?", result);
 		return OK;
 	}
 
-	fwrite(body, 1, body_size, fp);
-	fclose(fp);
+	apr_size_t nbytes = body_size;
+	apr_file_write(fp, body, &nbytes);
+	apr_file_close(fp);
 
 	return OK;
 }
@@ -114,7 +118,7 @@ static int request_handler(request_rec *r)
 	if(content_type_data){
 		if(strcmp(content_type_data,EXP_DATA_MIMETYPE))
 		{
-			//return DECLINED;
+			return DECLINED;
 		}
 	}
 
@@ -152,7 +156,7 @@ static int request_handler(request_rec *r)
      * To do so, we must first set the appropriate content type, followed by our output.
      */
     ap_set_content_type(r, "text/html");
-    ap_rprintf(r, "Success.");
+    ap_rprintf(r, "Received.");
 
     /* Lastly, we must tell the server that we took care of this request and everything went fine.
      * We do so by simply returning the value OK to the server.
