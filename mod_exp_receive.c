@@ -9,8 +9,8 @@
 #include "http_request.h"
 
 #define EXP_DATA_MIMETYPE	"application/prs.exp"
-
 #define DIRECTORY			"/logs/"
+#define USERIDFIELD			"From2"
 
 /*
  * To develop this module with Eclipse, Use the New Project -> Existing Code With Makefile option and point it to the location of this file.
@@ -28,7 +28,7 @@ struct experiment_record
 
 static int process_request_body(request_rec *r, const char* body, int body_size)
 {
-	const char* from_data = apr_table_get(r->headers_in, "From2");
+	const char* from_data = apr_table_get(r->headers_in, USERIDFIELD);
 
 	char* filename = apr_pcalloc(r->pool, strlen(DIRECTORY) + strlen(from_data));
 	strcpy(filename, DIRECTORY);
@@ -38,7 +38,8 @@ static int process_request_body(request_rec *r, const char* body, int body_size)
 
 	if(fp == NULL)
 	{
-		printf("Error: %d (%s)\n", errno, strerror(errno));
+		ap_log_rerror("mod_exp_receive.c", 41, APLOG_ERR, r->status, r, "Could not open file: %s", strerror(errno));
+		return OK;
 	}
 
 	fwrite(body, 1, body_size, fp);
@@ -132,7 +133,9 @@ static int request_handler(request_rec *r)
 	if(content_length_data){
 		if(body_size != strtol(content_length_data, NULL, 0))
 		{
-			//issue a warning to apache log
+			const char* from_data = apr_table_get(r->headers_in, USERIDFIELD);
+			ap_log_rerror("mod_exp_receive.c", 133, APLOG_WARNING, r->status, r, "The number of bytes received in the" \
+					" body from client %s differs from the specified Content-Length (%s, %i)", from_data, content_length_data, body_size);
 		}
 	}
 
