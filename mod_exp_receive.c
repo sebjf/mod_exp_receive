@@ -1,4 +1,6 @@
 
+#include <stdio.h>
+#include <uuid/uuid.h>
 #include "ap_config.h"
 #include "ap_provider.h"
 #include "apr.h"
@@ -11,8 +13,13 @@
 #include "http_request.h"
 
 #define EXP_DATA_MIMETYPE	"application/prs.exp"
-#define DIRECTORY			"/logs/"
+#define LOGFILENAMEPREFIX	"/logs/log_"
 #define USERIDFIELD			"From2"
+
+//https://developer.apple.com/library/mac/documentation/Darwin/Reference/ManPages/man3/uuid_unparse_lower.3.html
+#define UUIDSTRLEN			37
+
+
 
 /*
  * To develop this module with Eclipse, Use the New Project -> Existing Code With Makefile option and point it to the location of this file.
@@ -21,27 +28,39 @@
  * 			(Be aware that breakpoints may need to be added each time after httpd loads!)
  */
 
-struct experiment_record
+/* Each request gets its own file - generate a random, unused filename and open it */
+/* Use fopen() to test for file existance so if it succeeds (in finding an unused name) there is no race condition between this and opening it */
+static apr_file_t* get_request_file(request_rec* r)
 {
-	char* participant_identifier;
-
-};
-
-
-static int process_request_body(request_rec *r, const char* body, int body_size)
-{
-	const char* from_data = apr_table_get(r->headers_in, USERIDFIELD);
-
-	char* filename = apr_pcalloc(r->pool, strlen(DIRECTORY) + strlen(from_data));
-	strcpy(filename, DIRECTORY);
-	strcat(filename, from_data);
-
 	apr_file_t* fp = NULL;
-	apr_status_t result = apr_file_open(&fp, filename, (APR_WRITE | APR_CREATE | APR_TRUNCATE), APR_OS_DEFAULT, r->pool);
+
+	char* filename = apr_pcalloc(r->pool, strlen(LOGFILENAMEPREFIX) + UUIDSTRLEN);
+	strcpy(filename, LOGFILENAMEPREFIX);
+
+	apr_status_t result = APR_EEXIST;
+	do{
+		uuid_t uu;
+		uuid_generate(uu);
+		uuid_unparse_lower(uu, filename + strlen(LOGFILENAMEPREFIX));
+		result = apr_file_open(&fp, filename, (APR_WRITE | APR_CREATE | APR_EXCL), APR_OS_DEFAULT, r->pool);
+	}
+	while(result == APR_EEXIST);
 
 	if(result != OK)
 	{
-		ap_log_rerror("mod_exp_receive.c", 41, APLOG_ERR, r->status, r, "Could not open file: %i. Have you checked SELINUX context for the directory?", result);
+		ap_log_rerror("mod_exp_receive.c", 35, APLOG_ERR, r->status, r, "Could not open file: %s [%i]. Have you checked SELINUX context for the directory?", filename, result);
+		return NULL;
+	}
+
+	return fp;
+}
+
+static int process_request_body(request_rec *r, const char* body, int body_size)
+{
+	apr_file_t* fp = get_request_file(r);
+
+	if(fp == NULL)
+	{
 		return OK;
 	}
 
