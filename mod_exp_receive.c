@@ -152,16 +152,6 @@ static int request_handler(request_rec *r)
 		return result;
 	}
 
-	//Check that the received data is the same length as the reported content length
-	if(content_length_data){
-		if(body_size != strtol(content_length_data, NULL, 0))
-		{
-			const char* from_data = apr_table_get(r->headers_in, USERIDFIELD);
-			ap_log_rerror("mod_exp_receive.c", 133, APLOG_WARNING, r->status, r, "The number of bytes received in the" \
-					" body from client %s differs from the specified Content-Length (%s, %i)", from_data, content_length_data, body_size);
-		}
-	}
-
 	//Process the request body
 	result = process_request_body(r, body, body_size);
 
